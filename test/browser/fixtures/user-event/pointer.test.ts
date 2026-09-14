@@ -10,12 +10,34 @@ declare module 'vitest' {
   }
 }
 
+// when UI is enabled, automatically set the viewport using this value as the scale target
+const IFRAME_SCALE_TARGET = 0.5
+
+beforeAll(() => {
+  if (server.config.browser.ui) {
+    const frame = window.frameElement as HTMLIFrameElement
+    const container = frame.parentElement!
+    const frameWidth = frame.getBoundingClientRect().width
+    const containerWidth = container.getBoundingClientRect().width
+
+    page.viewport(
+      Math.round(Math.max(containerWidth, frameWidth) * (1 / IFRAME_SCALE_TARGET)),
+      window.innerHeight,
+    )
+  }
+})
+
+// when running with UI enabled, because of scaling, a real "browser pixel"
+//  maps to many "iframe pixels"
 expect.extend({
   __withinTolerance(received, expected) {
     const difference = Math.abs(received - expected)
-    // need to use a tolerance when UI is enabled because of scaling
-    // a real pixel can be many "iframe pixels" depending on the applied scaling
-    const tolerance = server.config.browser.ui ? 5 : 0
+    const tolerance = server.config.browser.ui
+      // the test is running in a scaled frame, compute how many "iframe pixels" correspond
+      //  to a "browser pixel", ceil the result, and add an extra buffer for safety
+      ? Math.ceil(1 / IFRAME_SCALE_TARGET) + 1
+      // the test is running at full scale so the provided coordinates should match exactly
+      : 0
 
     return {
       pass: difference <= tolerance,
@@ -37,6 +59,7 @@ const BUTTON_ABSOLUTE_HTML = /* html */`<button style="position: absolute; top: 
 //  - log event position and offset (w.r.t. target)
 //  - print a red circle on `mousedown` and a blue one on `mouseup`
 // beforeAll(() => {
+//   const id = 'pntr'
 //   const ac = new AbortController()
 //   const fn = (color: string) => (e: MouseEvent) => {
 //     console.log(e)
@@ -47,10 +70,10 @@ const BUTTON_ABSOLUTE_HTML = /* html */`<button style="position: absolute; top: 
 //       offsetX: e.offsetX,
 //       offsetY: e.offsetY,
 //     })
-//     let pointer = document.getElementById('pntr')
+//     let pointer = document.getElementById(id)
 //     if (!pointer) {
 //       pointer = document.createElement('div')
-//       pointer.id = 'pntr'
+//       pointer.id = id
 //       document.body.appendChild(pointer)
 //     }
 //     pointer.style = `position: absolute; top: ${e.clientY}px; left: ${e.clientX}px; width: 5px; height: 5px; background-color: ${color}; pointer-events: none; border-radius: 100%;`
