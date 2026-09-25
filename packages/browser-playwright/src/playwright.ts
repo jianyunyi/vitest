@@ -733,6 +733,34 @@ function getCodeWithSourcemap(
 
   return code
 }
+function createPredicate(url: string) {
+  const moduleUrl = new URL(url, 'http://localhost')
+
+  function normalizeUrl(value: URL) {
+    const normalized = new URL(value.href)
+
+    normalized.searchParams.delete('t')
+    normalized.searchParams.delete('v')
+    normalized.searchParams.delete('import')
+
+    return normalized
+  }
+
+  const normalizedModuleUrl = normalizeUrl(moduleUrl)
+
+  const predicate = (url: URL) => {
+    if (url.searchParams.has('_vitest_original')) {
+      return false
+    }
+
+    const normalizedUrl = normalizeUrl(url)
+
+    return normalizedUrl.pathname === normalizedModuleUrl.pathname
+      && normalizedUrl.search === normalizedModuleUrl.search
+  }
+
+  return { url: moduleUrl.href, predicate }
+}
 
 function genSourceMapUrl(map: SourceMap | string): string {
   if (typeof map !== 'string') {
