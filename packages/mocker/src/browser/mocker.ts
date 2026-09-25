@@ -13,6 +13,7 @@ export class ModuleMocker implements TestModuleMocker {
 
   private queue = new Set<Promise<void>>()
   private mockedIds = new Set<string>()
+  
 
   constructor(
     private interceptor: ModuleMockerInterceptor,
@@ -20,6 +21,70 @@ export class ModuleMocker implements TestModuleMocker {
     private createMockInstance: CreateMockInstanceProcedure,
     private config: ModuleMockerConfig,
   ) {}
+    const normalizeVirtualId = (id: string) => {
+    return id.startsWith('\0')
+      ? `/@id/${id.replace('\0', '__x00__')}`
+      : id
+  }
+    public async importActual<T>(id: string, importer: string): Promise<T> {
+    const resolved = await this.rpc.resolveId(id, importer)
+    if (resolved == null) {
+      throw new Error(`[vitest] Cannot resolve "${id}" imported from "${importer}"`)
+    }
+  
+    const ext = extname(resolved.id)
+    const url = new URL(resolved.url, this.getBaseUrl())
+    const query = `_vitest_original&ext${ext}`
+  
+    const actualUrl = `${url.pathname}${url.search ? `${url.search}&${query}` : `?${query}`}${url.hash}`
+    return this.wrapDynamicImport(() => import(/* @vite-ignore */ actualUrl))
+      .then((mod) => {
+        if (!resolved.optimized || typeof mod.default === 'undefined') {
+          return mod
+        }
+        const m = mod.default
+        return m?.__esModule
+          ? m
+          : { ...((typeof m === 'object' && !Array.isArray(m)) || typeof m === 'function' ? m : {}), default: m }
+      })
+  }
+  
+  public async importMock<T>(rawId: string, importer: string): Promise<T> {
+    await this.prepare()
+    const { resolvedId, resolvedUrl, redirectUrl } = await this.rpc.resolveMock(
+      rawId,
+      importer,
+      { mock: 'auto' },
+    )
+  
+    const normalizedResolvedId = normalizeVirtualId(resolvedId)
+    const mockUrl = this.resolveMockPath(cleanVersion(resolvedUrl))
+    let mock = this.registry.get(mockUrl)
+  
+    if (!mock) {
+      if (redirectUrl) {
+        const resolvedRedirect = new URL(this.resolveMockPath(cleanVersion(redirectUrl)), this.getBaseUrl()).toString()
+        mock = new RedirectedModule(rawId, normalizedResolvedId, mockUrl, resolvedRedirect)
+      }
+      else {
+        mock = new AutomockedModule(rawId, normalizedResolvedId, mockUrl)
+      }
+    }
+  
+    if (mock.type === 'manual') {
+      return await mock.resolve() as T
+    }
+  
+    if (mock.type === 'automock' || mock.type === 'autospy') {
+      const url = new URL(normalizedResolvedId, this.getBaseUrl())
+      const query = url.search ? `${url.search}&t=${now()}` : `?t=${now()}`
+      const moduleObject = await import(/* @vite-ignore */ `${url.pathname}${query}&mock=${mock.type}${url.hash}`)
+      return this.mockObject(moduleObject, mock.type) as T
+    }
+  
+    return import(/* @vite-ignore */ mock.redirect)
+  }
+
 
   public async prepare(): Promise<void> {
     if (!this.queue.size) {
