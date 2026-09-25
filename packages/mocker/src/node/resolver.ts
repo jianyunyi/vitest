@@ -72,6 +72,11 @@ export class ServerMockResolver {
   private normalizeResolveIdToUrl(resolved: { id: string }) {
     const isOptimized = resolved.id.startsWith(withTrailingSlash(this.server.config.cacheDir))
     let url: string
+    if (url[0] !== '.' && url[0] !== '/') {    
+      url = resolved.id.startsWith(VALID_ID_PREFIX)
+        ? resolved.id
+        : VALID_ID_PREFIX + resolved.id.replace('\0', '__x00__')
+    }
     // normalise the URL to be acceptable by the browser
     // https://github.com/vitejs/vite/blob/14027b0f2a9b01c14815c38aab22baf5b29594bb/packages/vite/src/node/plugins/importAnalysis.ts#L103
     const root = this.server.config.root
